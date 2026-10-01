@@ -17,7 +17,7 @@ set( APPLICATION_VENDOR     "Sigma Grid" )
 
 # Disable the official Nextcloud updater for the custom build.
 # We will define our own update mechanism later.
-set( APPLICATION_UPDATE_URL "" CACHE STRING "URL for updater" )
+set( APPLICATION_UPDATE_URL "https://sigmagrid.hr" CACHE STRING "URL for updater" )
 set( APPLICATION_HELP_URL   "https://sigmagrid.hr" CACHE STRING "URL for the help menu" )
 
 # Default macOS builds (Nextcloud + NextcloudDev) use the Icon Composer (.icon)
