@@ -330,6 +330,108 @@ jobs:
 
           craft --package nextcloud-client
 
+      - name: Inspect final Craft package after packaging
+        shell: pwsh
+        run: |
+          Write-Host "========== ALL SIGMA GRID EXECUTABLES AFTER PACKAGING =========="
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -ieq "sigmagridcloud.exe" -or
+                $_.Name -ieq "sigmagridcloudcmd.exe"
+            } |
+            ForEach-Object {
+                Write-Host "$($_.FullName) [$($_.Length) bytes]"
+            }
+
+          Write-Host ""
+          Write-Host "========== POSSIBLE ARCHIVE / PACKAGE DIRECTORIES =========="
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -Directory -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.FullName -match "archive|package|image-RelWithDebInfo"
+            } |
+            ForEach-Object {
+                Write-Host ""
+                Write-Host "DIRECTORY: $($_.FullName)"
+
+                $sigmaExe = Join-Path $_.FullName "bin\sigmagridcloud.exe"
+
+                if (Test-Path $sigmaExe) {
+                    $f = Get-Item $sigmaExe
+                    Write-Host ">>> FOUND MAIN EXE: $($f.FullName) [$($f.Length) bytes]"
+                }
+            }
+
+          Write-Host ""
+          Write-Host "========== GENERATED NSIS FILES =========="
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -Filter "*.nsi" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Write-Host ""
+                Write-Host "NSIS FILE: $($_.FullName)"
+
+                Select-String -Path $_.FullName `
+                  -Pattern "srcdir|sigmagridcloud|File /r|File " `
+                  -Context 2,2 -ErrorAction SilentlyContinue |
+                  ForEach-Object {
+                      Write-Host $_.ToString()
+                  }
+            }
+
+          Write-Host ""
+          Write-Host "========== GENERATED INSTALLER =========="
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\tmp" -File -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Write-Host "$($_.FullName) [$($_.Length) bytes]"
+            }
+
+      - name: Prepare Craft package diagnostics
+        shell: pwsh
+        run: |
+          $diag = "${{ github.workspace }}\package-diagnostics"
+          New-Item -ItemType Directory -Force -Path $diag | Out-Null
+
+          Write-Host "Collecting generated NSIS scripts..."
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -Filter "*.nsi" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $safeName = $_.FullName.Replace(":", "").Replace("\", "_")
+                Copy-Item $_.FullName (Join-Path $diag $safeName) -Force
+            }
+
+          Write-Host "Creating executable location report..."
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -ieq "sigmagridcloud.exe" -or
+                $_.Name -ieq "sigmagridcloudcmd.exe"
+            } |
+            ForEach-Object {
+                "$($_.FullName) [$($_.Length) bytes]"
+            } | Out-File "$diag\executables.txt" -Encoding utf8
+
+          Write-Host "Creating directory report..."
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -Directory -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.FullName -match "archive|package|image-RelWithDebInfo"
+            } |
+            Select-Object -ExpandProperty FullName |
+            Out-File "$diag\package-directories.txt" -Encoding utf8
+
+          Write-Host "Diagnostics prepared in $diag"
+
+      - name: Upload Craft package diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: SigmaGridCloud-Package-Diagnostics
+          path: |
+            ${{ github.workspace }}\package-diagnostics
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Find generated installer
         shell: pwsh
         run: |
