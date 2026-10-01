@@ -334,6 +334,41 @@ jobs:
       # CREATE INSTALLER
       # ------------------------------------------------------------
 
+      - name: Set Sigma Grid Cloud installer welcome artwork
+        shell: pwsh
+        run: |
+          $nsis = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\craft-clone\bin\Packager\Nsis\NullsoftInstaller.nsi"
+          $bitmap = "${{ github.workspace }}\.github\SigmaGridCloud-Installer-Welcome.bmp"
+
+          if (!(Test-Path $nsis)) {
+              throw "Craft NSIS template not found: $nsis"
+          }
+
+          if (!(Test-Path $bitmap)) {
+              throw "Sigma Grid Cloud installer artwork not found: $bitmap"
+          }
+
+          $content = Get-Content $nsis -Raw
+
+          if (!$content.Contains('!insertmacro MUI_PAGE_WELCOME')) {
+              throw "MUI_PAGE_WELCOME not found in Craft NSIS template."
+          }
+
+          $replacement = @"
+          !define MUI_WELCOMEFINISHPAGE_BITMAP "$bitmap"
+          !insertmacro MUI_PAGE_WELCOME
+          "@
+
+          $content = $content.Replace(
+              '!insertmacro MUI_PAGE_WELCOME',
+              $replacement.Trim()
+          )
+
+          Set-Content -Path $nsis -Value $content -Encoding UTF8
+
+          Write-Host "Sigma Grid Cloud Welcome/Finish artwork configured:"
+          Write-Host $bitmap
+
       - name: Create Windows installer
         shell: pwsh
         run: |
