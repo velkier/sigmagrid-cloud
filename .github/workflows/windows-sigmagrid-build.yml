@@ -337,7 +337,7 @@ jobs:
       - name: Set Sigma Grid Cloud installer welcome artwork
         shell: pwsh
         run: |
-          $nsis = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\craft-clone\bin\Packager\Nsis\NullsoftInstaller.nsi"
+          $nsis = "${{ github.workspace }}\craft-clone\bin\Packager\Nsis\NullsoftInstaller.nsi"
           $bitmap = "${{ github.workspace }}\.github\SigmaGridCloud-Installer-Welcome.bmp"
 
           if (!(Test-Path $nsis)) {
