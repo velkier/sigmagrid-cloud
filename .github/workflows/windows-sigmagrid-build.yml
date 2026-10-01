@@ -124,21 +124,29 @@ jobs:
 
           craft --src-dir "${{ github.workspace }}" nextcloud-client
 
-      - name: Fix Nextcloud Craft packaging blueprint
+      - name: Patch Craft for Sigma Grid Cloud packaging
         shell: pwsh
         run: |
           $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
 
           $content = Get-Content $blueprint -Raw
 
+          # Fix upstream missing Python import
           if ($content -notmatch '(?m)^import os\s*$') {
-              $content = "import os`r`n" + $content
-              Set-Content -Path $blueprint -Value $content -Encoding UTF8
-              Write-Host "Added missing 'import os' to Nextcloud Craft blueprint."
+              $content = $content -replace 'import info', "import os`r`nimport info"
           }
-          else {
-              Write-Host "'import os' already present - no patch needed."
-          }
+
+          # Sigma Grid Cloud installer branding
+          $content = $content.Replace('self.description = "Nextcloud Desktop Client"', 'self.description = "Sigma Grid Cloud Desktop Client"')
+          $content = $content.Replace('self.displayName = "Nextcloud"', 'self.displayName = "Sigma Grid Cloud"')
+          $content = $content.Replace('self.webpage = "https://nextcloud.com"', 'self.webpage = "https://sigmagrid.hr"')
+          $content = $content.Replace('self.defines["appname"] = "nextcloud"', 'self.defines["appname"] = "sigmagridcloud"')
+          $content = $content.Replace('self.defines["company"] = "Nextcloud GmbH"', 'self.defines["company"] = "Sigma Grid"')
+          $content = $content.Replace('self.applicationExecutable = "nextcloud"', 'self.applicationExecutable = "sigmagridcloud"')
+
+          Set-Content -Path $blueprint -Value $content -Encoding UTF8
+
+          Write-Host "Craft blueprint patched for Sigma Grid Cloud."
 
       - name: Create Windows installer
         shell: pwsh
