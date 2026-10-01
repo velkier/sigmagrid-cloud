@@ -246,6 +246,80 @@ jobs:
           Write-Host "Installer icon set to:"
           Write-Host $icon
 
+      - name: Inspect package blacklist and packaging rules
+        shell: pwsh
+        run: |
+          Write-Host "========== BLACKLIST FILES =========="
+
+          $blacklists = Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -Filter "blacklist.txt" -ErrorAction SilentlyContinue
+
+          if ($blacklists) {
+              foreach ($file in $blacklists) {
+                  Write-Host ""
+                  Write-Host "BLACKLIST: $($file.FullName)"
+                  Write-Host "----------------------------------------"
+                  Get-Content $file.FullName
+                  Write-Host "----------------------------------------"
+              }
+          }
+          else {
+              Write-Host "No blacklist.txt files found."
+          }
+
+          Write-Host ""
+          Write-Host "========== PACKAGER BASE RELEVANT LINES =========="
+
+          $packagerBase = "${{ github.workspace }}\craft-clone\bin\Packager\PackagerBase.py"
+
+          if (Test-Path $packagerBase) {
+              Select-String -Path $packagerBase `
+                -Pattern "blacklist|whitelist|applicationExecutable|packageDir|imageDir|archive|createPackage" `
+                -Context 5,5 |
+                ForEach-Object {
+                    Write-Host ""
+                    Write-Host "LINE: $($_.LineNumber)"
+                    Write-Host $_.ToString()
+                }
+          }
+          else {
+              Write-Host "PackagerBase.py not found."
+          }
+
+          Write-Host ""
+          Write-Host "========== NSIS PACKAGER RELEVANT LINES =========="
+
+          $nsisPackager = "${{ github.workspace }}\craft-clone\bin\Packager\NullsoftInstallerPackager.py"
+
+          if (Test-Path $nsisPackager) {
+              Select-String -Path $nsisPackager `
+                -Pattern "blacklist|whitelist|applicationExecutable|appname|imageDir|packageDir|File|INSTDIR" `
+                -Context 5,5 |
+                ForEach-Object {
+                    Write-Host ""
+                    Write-Host "LINE: $($_.LineNumber)"
+                    Write-Host $_.ToString()
+                }
+          }
+          else {
+              Write-Host "NullsoftInstallerPackager.py not found."
+          }
+
+          Write-Host ""
+          Write-Host "========== PACKAGE IMAGE BIN =========="
+
+          $imageBin = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\image-RelWithDebInfo-master\bin"
+
+          if (Test-Path $imageBin) {
+              Get-ChildItem $imageBin -File |
+                Sort-Object Name |
+                ForEach-Object {
+                    Write-Host "$($_.Name) [$($_.Length) bytes]"
+                }
+          }
+          else {
+              Write-Host "Package image bin not found: $imageBin"
+          }
+
       - name: Create Windows installer
         shell: pwsh
         run: |
