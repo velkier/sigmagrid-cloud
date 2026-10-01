@@ -148,6 +148,25 @@ jobs:
 
           Write-Host "Craft blueprint patched for Sigma Grid Cloud."
 
+      - name: Inspect Craft icons and NSIS branding
+        shell: pwsh
+        run: |
+          Write-Host "========== ICO FILES =========="
+          Get-ChildItem "${{ github.workspace }}" -Recurse -Filter "*.ico" -File -ErrorAction SilentlyContinue |
+            Select-Object FullName, Length
+
+          Write-Host "========== CRAFT ICO REFERENCES =========="
+          Get-ChildItem "${{ github.workspace }}" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in ".nsi", ".nsh", ".py" } |
+            Select-String -Pattern "craft\.ico" -ErrorAction SilentlyContinue |
+            Select-Object Path, LineNumber, Line
+
+          Write-Host "========== NSIS ICON REFERENCES =========="
+          Get-ChildItem "${{ github.workspace }}" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in ".nsi", ".nsh" } |
+            Select-String -Pattern "Icon|MUI_ICON|MUI_WELCOMEFINISHPAGE_BITMAP" -ErrorAction SilentlyContinue |
+            Select-Object Path, LineNumber, Line
+
       - name: Inspect Sigma Grid Cloud package archive
         shell: pwsh
         run: |
@@ -156,12 +175,12 @@ jobs:
           Write-Host "Checking package archive: $archive"
 
           if (Test-Path $archive) {
-              Write-Host "Sigma Grid Cloud files found in archive:"
+              Write-Host "========== SIGMA GRID FILES IN ARCHIVE =========="
               Get-ChildItem $archive -Recurse -File |
                 Where-Object { $_.Name -like "*sigmagrid*" } |
                 Select-Object FullName, Length
 
-              Write-Host "EXE files found in archive:"
+              Write-Host "========== EXE FILES IN ARCHIVE =========="
               Get-ChildItem $archive -Recurse -Filter "*.exe" -File |
                 Select-Object FullName, Length
           }
