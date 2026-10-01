@@ -137,56 +137,87 @@ jobs:
           }
 
           # Sigma Grid Cloud installer branding
-          $content = $content.Replace('self.description = "Nextcloud Desktop Client"', 'self.description = "Sigma Grid Cloud Desktop Client"')
-          $content = $content.Replace('self.displayName = "Nextcloud"', 'self.displayName = "Sigma Grid Cloud"')
-          $content = $content.Replace('self.webpage = "https://nextcloud.com"', 'self.webpage = "https://sigmagrid.hr"')
-          $content = $content.Replace('self.defines["appname"] = "nextcloud"', 'self.defines["appname"] = "sigmagridcloud"')
-          $content = $content.Replace('self.defines["company"] = "Nextcloud GmbH"', 'self.defines["company"] = "Sigma Grid"')
-          $content = $content.Replace('self.applicationExecutable = "nextcloud"', 'self.applicationExecutable = "sigmagridcloud"')
+          $content = $content.Replace(
+              'self.description = "Nextcloud Desktop Client"',
+              'self.description = "Sigma Grid Cloud Desktop Client"'
+          )
+
+          $content = $content.Replace(
+              'self.displayName = "Nextcloud"',
+              'self.displayName = "Sigma Grid Cloud"'
+          )
+
+          $content = $content.Replace(
+              'self.webpage = "https://nextcloud.com"',
+              'self.webpage = "https://sigmagrid.hr"'
+          )
+
+          $content = $content.Replace(
+              'self.defines["appname"] = "nextcloud"',
+              'self.defines["appname"] = "sigmagridcloud"'
+          )
+
+          $content = $content.Replace(
+              'self.defines["company"] = "Nextcloud GmbH"',
+              'self.defines["company"] = "Sigma Grid"'
+          )
+
+          $content = $content.Replace(
+              'self.applicationExecutable = "nextcloud"',
+              'self.applicationExecutable = "sigmagridcloud"'
+          )
 
           Set-Content -Path $blueprint -Value $content -Encoding UTF8
 
           Write-Host "Craft blueprint patched for Sigma Grid Cloud."
 
-      - name: Inspect Craft icons and NSIS branding
+      - name: Inspect Craft NSIS packaging internals
         shell: pwsh
         run: |
-          Write-Host "========== ICO FILES =========="
-          Get-ChildItem "${{ github.workspace }}" -Recurse -Filter "*.ico" -File -ErrorAction SilentlyContinue |
-            Select-Object FullName, Length
+          Write-Host "========== CRAFT PACKAGING FILES =========="
 
-          Write-Host "========== CRAFT ICO REFERENCES =========="
-          Get-ChildItem "${{ github.workspace }}" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in ".nsi", ".nsh", ".py" } |
-            Select-String -Pattern "craft\.ico" -ErrorAction SilentlyContinue |
-            Select-Object Path, LineNumber, Line
+          $roots = @(
+              "${{ github.workspace }}\craft-clone",
+              "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc"
+          )
 
-          Write-Host "========== NSIS ICON REFERENCES =========="
-          Get-ChildItem "${{ github.workspace }}" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in ".nsi", ".nsh" } |
-            Select-String -Pattern "Icon|MUI_ICON|MUI_WELCOMEFINISHPAGE_BITMAP" -ErrorAction SilentlyContinue |
-            Select-Object Path, LineNumber, Line
+          foreach ($root in $roots) {
+              if (Test-Path $root) {
+                  Get-ChildItem $root -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Extension -in ".py", ".nsi", ".nsh" } |
+                    Select-String -Pattern "craft\.ico|installer\.ico|MUI_ICON|MUI_WELCOMEFINISHPAGE_BITMAP|applicationExecutable|appname" -ErrorAction SilentlyContinue |
+                    ForEach-Object {
+                        Write-Host ""
+                        Write-Host "FILE: $($_.Path)"
+                        Write-Host "LINE: $($_.LineNumber)"
+                        Write-Host "TEXT: $($_.Line.Trim())"
+                    }
+              }
+          }
 
-      - name: Inspect Sigma Grid Cloud package archive
-        shell: pwsh
-        run: |
-          $archive = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\archive"
+          Write-Host ""
+          Write-Host "========== NEXTCLOUD BLUEPRINT =========="
 
-          Write-Host "Checking package archive: $archive"
+          $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
 
-          if (Test-Path $archive) {
-              Write-Host "========== SIGMA GRID FILES IN ARCHIVE =========="
-              Get-ChildItem $archive -Recurse -File |
-                Where-Object { $_.Name -like "*sigmagrid*" } |
-                Select-Object FullName, Length
-
-              Write-Host "========== EXE FILES IN ARCHIVE =========="
-              Get-ChildItem $archive -Recurse -Filter "*.exe" -File |
-                Select-Object FullName, Length
+          if (Test-Path $blueprint) {
+              Get-Content $blueprint
           }
           else {
-              Write-Host "Archive directory does not exist yet."
+              Write-Host "Blueprint not found: $blueprint"
           }
+
+          Write-Host ""
+          Write-Host "========== SIGMA GRID EXECUTABLE LOCATIONS =========="
+
+          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -ieq "sigmagridcloud.exe" -or
+                $_.Name -ieq "sigmagridcloudcmd.exe"
+            } |
+            ForEach-Object {
+                Write-Host "$($_.FullName) [$($_.Length) bytes]"
+            }
 
       - name: Create Windows installer
         shell: pwsh
@@ -202,6 +233,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Generated installer files:"
+
           Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File |
             Where-Object { $_.Extension -in ".exe", ".msi" } |
             Select-Object FullName, Length
