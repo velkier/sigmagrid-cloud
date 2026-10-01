@@ -25,6 +25,7 @@ WizardStyledWindow {
     minimumWidth: Style.accountWizardWidth
     minimumHeight: compactHeight
     title: ""
+
     function defaultHeightForCurrentStep() {
         return controller && controller.currentStep === AccountWizardController.SyncOptionsStep
             ? syncOptionsHeight
@@ -210,6 +211,7 @@ WizardStyledWindow {
                 if (!root.controller) {
                     return null
                 }
+
                 switch (root.controller.currentStep) {
                 case AccountWizardController.BrowserAuthStep:
                     return browserAuthPage
@@ -277,26 +279,6 @@ WizardStyledWindow {
                 onClicked: root.controller.openAdvancedOptions()
             },
 
-            WizardButton {
-                visible: root.controller && root.controller.currentStep === AccountWizardController.ServerStep
-                enabled: root.controller && !root.controller.busy
-                text: qsTr("Sign up")
-                textSuffix: "\u2197"
-                Layout.fillWidth: true
-                Layout.preferredWidth: 1
-                onClicked: root.controller.openSignup()
-            },
-
-            WizardButton {
-                visible: root.controller && root.controller.currentStep === AccountWizardController.ServerStep
-                enabled: root.controller && !root.controller.busy
-                text: qsTr("Self-host")
-                textSuffix: "\u2197"
-                Layout.fillWidth: true
-                Layout.preferredWidth: 1
-                onClicked: root.controller.openSelfHostedServerGuide()
-            },
-
             Button {
                 id: proxySettingsButton
 
@@ -354,6 +336,7 @@ WizardStyledWindow {
                     if (!root.controller) {
                         return ""
                     }
+
                     switch (root.controller.currentStep) {
                     case AccountWizardController.BasicAuthStep:
                         return qsTr("Connect")
