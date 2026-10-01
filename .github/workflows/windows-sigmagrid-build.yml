@@ -22,6 +22,11 @@ jobs:
       PYTHON_VERSION: '3.12'
 
     steps:
+
+      # ------------------------------------------------------------
+      # CHECKOUT
+      # ------------------------------------------------------------
+
       - name: Checkout Sigma Grid Cloud
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -32,6 +37,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # ------------------------------------------------------------
+      # CRAFT
+      # ------------------------------------------------------------
+
       - name: Resolve Craft dependency revisions
         id: craft-revisions
         shell: pwsh
@@ -39,9 +48,11 @@ jobs:
           function configValue($key) {
               $escapedKey = [regex]::Escape($key)
               $matches = @(Select-String -Path "${{ env.CRAFT_MASTER_CONFIG }}" -Pattern "^\s*$escapedKey\s*=\s*(.+?)\s*$")
+
               if($matches.Count -ne 1) {
                   throw "Expected exactly one $key value in craftmaster.ini."
               }
+
               return $matches[0].Matches[0].Groups[1].Value.Trim()
           }
 
@@ -51,14 +62,21 @@ jobs:
 
           function remoteRevision($repository, $ref) {
               $revision = git ls-remote $repository $ref
+
               if($LASTEXITCODE -ne 0 -or !$revision) {
                   throw "Could not resolve $ref from $repository."
               }
+
               return ($revision -split '\s+')[0]
           }
 
-          $kdeBlueprintRevision = remoteRevision "https://github.com/nextcloud/craft-blueprints-kde.git" "refs/heads/$kdeBlueprintRef"
-          $nextcloudBlueprintRevision = remoteRevision "https://github.com/nextcloud/craft-blueprints-nextcloud.git" "refs/heads/$nextcloudBlueprintRef"
+          $kdeBlueprintRevision = remoteRevision `
+              "https://github.com/nextcloud/craft-blueprints-kde.git" `
+              "refs/heads/$kdeBlueprintRef"
+
+          $nextcloudBlueprintRevision = remoteRevision `
+              "https://github.com/nextcloud/craft-blueprints-nextcloud.git" `
+              "refs/heads/$nextcloudBlueprintRef"
 
           @(
               "kde_ref=$kdeBlueprintRef"
@@ -84,12 +102,22 @@ jobs:
           & cmd /C "git clone -q --depth=1 https://invent.kde.org/packaging/craftmaster.git ${{ env.CRAFT_MASTER_LOCATION }} 2>&1"
 
           function craft() {
-              python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" --config "${{ env.CRAFT_MASTER_CONFIG }}" --target ${{ env.CRAFT_TARGET }} -c $args
-              if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+                  --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+                  --target ${{ env.CRAFT_TARGET }} `
+                  -c $args
+
+              if($LASTEXITCODE -ne 0) {
+                  exit $LASTEXITCODE
+              }
           }
 
-          craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|${{ steps.craft-revisions.outputs.kde_ref }}|"
-          craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-nextcloud.git|${{ steps.craft-revisions.outputs.nextcloud_ref }}|"
+          craft --add-blueprint-repository `
+              "https://github.com/nextcloud/craft-blueprints-kde.git|${{ steps.craft-revisions.outputs.kde_ref }}|"
+
+          craft --add-blueprint-repository `
+              "https://github.com/nextcloud/craft-blueprints-nextcloud.git|${{ steps.craft-revisions.outputs.nextcloud_ref }}|"
+
           craft craft
           craft --install-deps nextcloud-client
 
@@ -104,6 +132,10 @@ jobs:
             ${{ github.workspace }}\${{ env.CRAFT_TARGET }}
           key: ${{ runner.os }}-sigmagrid-craft-v1-${{ env.CRAFT_TARGET }}-python-${{ env.PYTHON_VERSION }}-${{ steps.craft-revisions.outputs.key }}
 
+      # ------------------------------------------------------------
+      # BUILD TOOLS
+      # ------------------------------------------------------------
+
       - name: Install Inkscape
         shell: pwsh
         run: |
@@ -112,31 +144,52 @@ jobs:
       - name: Setup PATH
         shell: pwsh
         run: |
-          echo "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      # ------------------------------------------------------------
+      # COMPILE SIGMA GRID CLOUD
+      # ------------------------------------------------------------
 
       - name: Compile Sigma Grid Cloud
         shell: pwsh
         run: |
           function craft() {
-              python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" --config "${{ env.CRAFT_MASTER_CONFIG }}" --target ${{ env.CRAFT_TARGET }} -c $args
-              if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+                  --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+                  --target ${{ env.CRAFT_TARGET }} `
+                  -c $args
+
+              if($LASTEXITCODE -ne 0) {
+                  exit $LASTEXITCODE
+              }
           }
 
           craft --src-dir "${{ github.workspace }}" nextcloud-client
+
+      # ------------------------------------------------------------
+      # PATCH CRAFT BLUEPRINT
+      # ------------------------------------------------------------
 
       - name: Patch Craft for Sigma Grid Cloud packaging
         shell: pwsh
         run: |
           $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
 
-          $content = Get-Content $blueprint -Raw
-
-          # Fix upstream missing Python import
-          if ($content -notmatch '(?m)^import os\s*$') {
-              $content = $content -replace 'import info', "import os`r`nimport info"
+          if (!(Test-Path $blueprint)) {
+              throw "Nextcloud Craft blueprint not found: $blueprint"
           }
 
-          # Sigma Grid Cloud installer branding
+          $content = Get-Content $blueprint -Raw
+
+          # Upstream blueprint uses os.path but currently does not import os.
+          if ($content -notmatch '(?m)^import os\s*$') {
+              $content = $content -replace `
+                  'import info', `
+                  "import os`r`nimport info"
+          }
+
+          # Sigma Grid Cloud branding.
           $content = $content.Replace(
               'self.description = "Nextcloud Desktop Client"',
               'self.description = "Sigma Grid Cloud Desktop Client"'
@@ -171,58 +224,82 @@ jobs:
 
           Write-Host "Craft blueprint patched for Sigma Grid Cloud."
 
-      - name: Inspect Craft NSIS packaging internals
+      # ------------------------------------------------------------
+      # PATCH THE ACTUAL CAUSE OF THE MISSING EXE FILES
+      # ------------------------------------------------------------
+
+      - name: Patch Nextcloud package blacklist
         shell: pwsh
         run: |
-          Write-Host "========== CRAFT PACKAGING FILES =========="
+          $blacklist = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\blacklist.txt"
 
-          $roots = @(
-              "${{ github.workspace }}\craft-clone",
-              "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc"
-          )
-
-          foreach ($root in $roots) {
-              if (Test-Path $root) {
-                  Get-ChildItem $root -Recurse -File -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Extension -in ".py", ".nsi", ".nsh" } |
-                    Select-String -Pattern "craft\.ico|installer\.ico|MUI_ICON|MUI_WELCOMEFINISHPAGE_BITMAP|applicationExecutable|appname" -ErrorAction SilentlyContinue |
-                    ForEach-Object {
-                        Write-Host ""
-                        Write-Host "FILE: $($_.Path)"
-                        Write-Host "LINE: $($_.LineNumber)"
-                        Write-Host "TEXT: $($_.Line.Trim())"
-                    }
-              }
+          if (!(Test-Path $blacklist)) {
+              throw "Nextcloud blacklist not found: $blacklist"
           }
+
+          Write-Host "Original executable blacklist rule:"
+
+          Select-String `
+              -Path $blacklist `
+              -Pattern 'strip most executables|bin/\(' `
+              -Context 0,1
+
+          $content = Get-Content $blacklist -Raw
+
+          $old = 'bin/(?!(nextcloud|nextcloudcmd|QtWebEngineProcess)).*\.exe'
+          $new = 'bin/(?!(nextcloud|nextcloudcmd|sigmagridcloud|sigmagridcloudcmd|QtWebEngineProcess)).*\.exe'
+
+          if (!$content.Contains($old)) {
+              throw "Expected Nextcloud executable blacklist rule was not found. Packaging rules may have changed."
+          }
+
+          $content = $content.Replace($old, $new)
+
+          Set-Content `
+              -Path $blacklist `
+              -Value $content `
+              -Encoding UTF8
 
           Write-Host ""
-          Write-Host "========== NEXTCLOUD BLUEPRINT =========="
+          Write-Host "Patched executable blacklist rule:"
 
-          $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
+          Select-String `
+              -Path $blacklist `
+              -Pattern 'sigmagridcloud'
 
-          if (Test-Path $blueprint) {
-              Get-Content $blueprint
+      # ------------------------------------------------------------
+      # VERIFY COMPILED EXECUTABLES BEFORE PACKAGING
+      # ------------------------------------------------------------
+
+      - name: Verify Sigma Grid Cloud executables
+        shell: pwsh
+        run: |
+          $imageBin = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\image-RelWithDebInfo-master\bin"
+
+          $mainExe = Join-Path $imageBin "sigmagridcloud.exe"
+          $cmdExe  = Join-Path $imageBin "sigmagridcloudcmd.exe"
+
+          if (!(Test-Path $mainExe)) {
+              throw "sigmagridcloud.exe is missing before packaging."
           }
-          else {
-              Write-Host "Blueprint not found: $blueprint"
+
+          if (!(Test-Path $cmdExe)) {
+              throw "sigmagridcloudcmd.exe is missing before packaging."
           }
 
-          Write-Host ""
-          Write-Host "========== SIGMA GRID EXECUTABLE LOCATIONS =========="
+          Write-Host "Both Sigma Grid Cloud executables exist before packaging:"
+          Write-Host $mainExe
+          Write-Host $cmdExe
 
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -ieq "sigmagridcloud.exe" -or
-                $_.Name -ieq "sigmagridcloudcmd.exe"
-            } |
-            ForEach-Object {
-                Write-Host "$($_.FullName) [$($_.Length) bytes]"
-            }
+      # ------------------------------------------------------------
+      # INSTALLER ICON
+      # ------------------------------------------------------------
 
       - name: Set Sigma Grid Cloud installer icon
         shell: pwsh
         run: |
           $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
+
           $icon = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\work\build\src\gui\SigmaGridCloud.ico"
 
           if (!(Test-Path $icon)) {
@@ -232,8 +309,12 @@ jobs:
           $content = Get-Content $blueprint -Raw
 
           $old = '        self.defines["company"] = "Sigma Grid"'
-          $new = '        self.defines["company"] = "Sigma Grid"' + "`r`n" +
-                 '        self.defines["icon"] = r"' + $icon + '"'
+
+          $new = '        self.defines["company"] = "Sigma Grid"' +
+                 "`r`n" +
+                 '        self.defines["icon"] = r"' +
+                 $icon +
+                 '"'
 
           if (!$content.Contains($old)) {
               throw "Could not find Sigma Grid company definition in blueprint."
@@ -241,205 +322,96 @@ jobs:
 
           $content = $content.Replace($old, $new)
 
-          Set-Content -Path $blueprint -Value $content -Encoding UTF8
+          Set-Content `
+              -Path $blueprint `
+              -Value $content `
+              -Encoding UTF8
 
           Write-Host "Installer icon set to:"
           Write-Host $icon
 
-      - name: Inspect package blacklist and packaging rules
-        shell: pwsh
-        run: |
-          Write-Host "========== BLACKLIST FILES =========="
-
-          $blacklists = Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -Filter "blacklist.txt" -ErrorAction SilentlyContinue
-
-          if ($blacklists) {
-              foreach ($file in $blacklists) {
-                  Write-Host ""
-                  Write-Host "BLACKLIST: $($file.FullName)"
-                  Write-Host "----------------------------------------"
-                  Get-Content $file.FullName
-                  Write-Host "----------------------------------------"
-              }
-          }
-          else {
-              Write-Host "No blacklist.txt files found."
-          }
-
-          Write-Host ""
-          Write-Host "========== PACKAGER BASE RELEVANT LINES =========="
-
-          $packagerBase = "${{ github.workspace }}\craft-clone\bin\Packager\PackagerBase.py"
-
-          if (Test-Path $packagerBase) {
-              Select-String -Path $packagerBase `
-                -Pattern "blacklist|whitelist|applicationExecutable|packageDir|imageDir|archive|createPackage" `
-                -Context 5,5 |
-                ForEach-Object {
-                    Write-Host ""
-                    Write-Host "LINE: $($_.LineNumber)"
-                    Write-Host $_.ToString()
-                }
-          }
-          else {
-              Write-Host "PackagerBase.py not found."
-          }
-
-          Write-Host ""
-          Write-Host "========== NSIS PACKAGER RELEVANT LINES =========="
-
-          $nsisPackager = "${{ github.workspace }}\craft-clone\bin\Packager\NullsoftInstallerPackager.py"
-
-          if (Test-Path $nsisPackager) {
-              Select-String -Path $nsisPackager `
-                -Pattern "blacklist|whitelist|applicationExecutable|appname|imageDir|packageDir|File|INSTDIR" `
-                -Context 5,5 |
-                ForEach-Object {
-                    Write-Host ""
-                    Write-Host "LINE: $($_.LineNumber)"
-                    Write-Host $_.ToString()
-                }
-          }
-          else {
-              Write-Host "NullsoftInstallerPackager.py not found."
-          }
-
-          Write-Host ""
-          Write-Host "========== PACKAGE IMAGE BIN =========="
-
-          $imageBin = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\image-RelWithDebInfo-master\bin"
-
-          if (Test-Path $imageBin) {
-              Get-ChildItem $imageBin -File |
-                Sort-Object Name |
-                ForEach-Object {
-                    Write-Host "$($_.Name) [$($_.Length) bytes]"
-                }
-          }
-          else {
-              Write-Host "Package image bin not found: $imageBin"
-          }
+      # ------------------------------------------------------------
+      # CREATE INSTALLER
+      # ------------------------------------------------------------
 
       - name: Create Windows installer
         shell: pwsh
         run: |
           function craft() {
-              python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" --config "${{ env.CRAFT_MASTER_CONFIG }}" --target ${{ env.CRAFT_TARGET }} -c $args
-              if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+                  --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+                  --target ${{ env.CRAFT_TARGET }} `
+                  -c $args
+
+              if($LASTEXITCODE -ne 0) {
+                  exit $LASTEXITCODE
+              }
           }
 
           craft --package nextcloud-client
 
-      - name: Inspect final Craft package after packaging
+      # ------------------------------------------------------------
+      # VERIFY FINAL PACKAGE
+      # ------------------------------------------------------------
+
+      - name: Verify Sigma Grid Cloud is included in final package
         shell: pwsh
         run: |
-          Write-Host "========== ALL SIGMA GRID EXECUTABLES AFTER PACKAGING =========="
+          Write-Host "Checking generated NSIS package..."
 
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -ieq "sigmagridcloud.exe" -or
-                $_.Name -ieq "sigmagridcloudcmd.exe"
-            } |
-            ForEach-Object {
-                Write-Host "$($_.FullName) [$($_.Length) bytes]"
-            }
+          $nsiFiles = @(
+              Get-ChildItem `
+                  "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" `
+                  -Recurse `
+                  -File `
+                  -Filter "*.nsi" `
+                  -ErrorAction SilentlyContinue
+          )
 
-          Write-Host ""
-          Write-Host "========== POSSIBLE ARCHIVE / PACKAGE DIRECTORIES =========="
+          if ($nsiFiles.Count -eq 0) {
+              throw "No generated NSIS script found."
+          }
 
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -Directory -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.FullName -match "archive|package|image-RelWithDebInfo"
-            } |
-            ForEach-Object {
-                Write-Host ""
-                Write-Host "DIRECTORY: $($_.FullName)"
+          $sigmaFound = $false
 
-                $sigmaExe = Join-Path $_.FullName "bin\sigmagridcloud.exe"
+          foreach ($nsi in $nsiFiles) {
 
-                if (Test-Path $sigmaExe) {
-                    $f = Get-Item $sigmaExe
-                    Write-Host ">>> FOUND MAIN EXE: $($f.FullName) [$($f.Length) bytes]"
-                }
-            }
+              $content = Get-Content $nsi.FullName -Raw
 
-          Write-Host ""
-          Write-Host "========== GENERATED NSIS FILES =========="
+              if ($content -match 'bin\\sigmagridcloud\.exe') {
+                  Write-Host "FOUND sigmagridcloud.exe in:"
+                  Write-Host $nsi.FullName
 
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -Filter "*.nsi" -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                Write-Host ""
-                Write-Host "NSIS FILE: $($_.FullName)"
+                  $sigmaFound = $true
+              }
+          }
 
-                Select-String -Path $_.FullName `
-                  -Pattern "srcdir|sigmagridcloud|File /r|File " `
-                  -Context 2,2 -ErrorAction SilentlyContinue |
-                  ForEach-Object {
-                      Write-Host $_.ToString()
-                  }
-            }
+          if (!$sigmaFound) {
+              throw "FINAL PACKAGE CHECK FAILED: bin\sigmagridcloud.exe is not present in the generated NSIS package."
+          }
 
           Write-Host ""
-          Write-Host "========== GENERATED INSTALLER =========="
+          Write-Host "SUCCESS: Sigma Grid Cloud executable is included in the final package."
 
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\tmp" -File -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                Write-Host "$($_.FullName) [$($_.Length) bytes]"
-            }
-
-      - name: Prepare Craft package diagnostics
-        shell: pwsh
-        run: |
-          $diag = "${{ github.workspace }}\package-diagnostics"
-          New-Item -ItemType Directory -Force -Path $diag | Out-Null
-
-          Write-Host "Collecting generated NSIS scripts..."
-
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -Filter "*.nsi" -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                $safeName = $_.FullName.Replace(":", "").Replace("\", "_")
-                Copy-Item $_.FullName (Join-Path $diag $safeName) -Force
-            }
-
-          Write-Host "Creating executable location report..."
-
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -ieq "sigmagridcloud.exe" -or
-                $_.Name -ieq "sigmagridcloudcmd.exe"
-            } |
-            ForEach-Object {
-                "$($_.FullName) [$($_.Length) bytes]"
-            } | Out-File "$diag\executables.txt" -Encoding utf8
-
-          Write-Host "Creating directory report..."
-
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -Directory -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.FullName -match "archive|package|image-RelWithDebInfo"
-            } |
-            Select-Object -ExpandProperty FullName |
-            Out-File "$diag\package-directories.txt" -Encoding utf8
-
-          Write-Host "Diagnostics prepared in $diag"
-
-      - name: Upload Craft package diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: SigmaGridCloud-Package-Diagnostics
-          path: |
-            ${{ github.workspace }}\package-diagnostics
-          if-no-files-found: error
-          retention-days: 14
+      # ------------------------------------------------------------
+      # SHOW + UPLOAD INSTALLER
+      # ------------------------------------------------------------
 
       - name: Find generated installer
         shell: pwsh
         run: |
           Write-Host "Generated installer files:"
 
-          Get-ChildItem "${{ github.workspace }}\${{ env.CRAFT_TARGET }}" -Recurse -File |
-            Where-Object { $_.Extension -in ".exe", ".msi" } |
-            Select-Object FullName, Length
+          Get-ChildItem `
+              "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\tmp" `
+              -File `
+              -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Extension -in ".exe", ".msi"
+            } |
+            ForEach-Object {
+                Write-Host "$($_.FullName) [$($_.Length) bytes]"
+            }
 
       - name: Upload Sigma Grid Cloud installer
         uses: actions/upload-artifact@v4
