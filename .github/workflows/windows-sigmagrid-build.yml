@@ -148,6 +148,27 @@ jobs:
 
           Write-Host "Craft blueprint patched for Sigma Grid Cloud."
 
+      - name: Inspect Sigma Grid Cloud package archive
+        shell: pwsh
+        run: |
+          $archive = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\archive"
+
+          Write-Host "Checking package archive: $archive"
+
+          if (Test-Path $archive) {
+              Write-Host "Sigma Grid Cloud files found in archive:"
+              Get-ChildItem $archive -Recurse -File |
+                Where-Object { $_.Name -like "*sigmagrid*" } |
+                Select-Object FullName, Length
+
+              Write-Host "EXE files found in archive:"
+              Get-ChildItem $archive -Recurse -Filter "*.exe" -File |
+                Select-Object FullName, Length
+          }
+          else {
+              Write-Host "Archive directory does not exist yet."
+          }
+
       - name: Create Windows installer
         shell: pwsh
         run: |
