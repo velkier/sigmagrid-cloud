@@ -4,7 +4,7 @@
 name: Sigma Grid Cloud - Windows Build
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 concurrency:
   group: sigmagrid-windows-build
