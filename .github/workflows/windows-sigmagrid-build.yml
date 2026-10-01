@@ -222,30 +222,26 @@ jobs:
       - name: Set Sigma Grid Cloud installer icon
         shell: pwsh
         run: |
-          $packager = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
+          $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
           $icon = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\build\nextcloud-client\work\build\src\gui\SigmaGridCloud.ico"
 
           if (!(Test-Path $icon)) {
               throw "Sigma Grid Cloud icon not found: $icon"
           }
 
-          $content = Get-Content $packager -Raw
+          $content = Get-Content $blueprint -Raw
 
-          $old = 'self.defines["company"] = "Sigma Grid"'
-          $new = @'
-          self.defines["company"] = "Sigma Grid"
-          self.defines["icon"] = r"ICON_PATH_PLACEHOLDER"
-          '@
-
-          $new = $new.Replace("ICON_PATH_PLACEHOLDER", $icon)
+          $old = '        self.defines["company"] = "Sigma Grid"'
+          $new = '        self.defines["company"] = "Sigma Grid"' + "`r`n" +
+                 '        self.defines["icon"] = r"' + $icon + '"'
 
           if (!$content.Contains($old)) {
               throw "Could not find Sigma Grid company definition in blueprint."
           }
 
-          $content = $content.Replace($old, $new.TrimEnd())
+          $content = $content.Replace($old, $new)
 
-          Set-Content -Path $packager -Value $content -Encoding UTF8
+          Set-Content -Path $blueprint -Value $content -Encoding UTF8
 
           Write-Host "Installer icon set to:"
           Write-Host $icon
