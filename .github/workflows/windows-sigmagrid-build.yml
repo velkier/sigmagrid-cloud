@@ -124,6 +124,22 @@ jobs:
 
           craft --src-dir "${{ github.workspace }}" nextcloud-client
 
+      - name: Fix Nextcloud Craft packaging blueprint
+        shell: pwsh
+        run: |
+          $blueprint = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\etc\blueprints\locations\craft-blueprints-nextcloud\nextcloud-client\nextcloud-client.py"
+
+          $content = Get-Content $blueprint -Raw
+
+          if ($content -notmatch '(?m)^import os\s*$') {
+              $content = "import os`r`n" + $content
+              Set-Content -Path $blueprint -Value $content -Encoding UTF8
+              Write-Host "Added missing 'import os' to Nextcloud Craft blueprint."
+          }
+          else {
+              Write-Host "'import os' already present - no patch needed."
+          }
+
       - name: Create Windows installer
         shell: pwsh
         run: |
