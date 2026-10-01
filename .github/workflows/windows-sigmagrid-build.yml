@@ -397,21 +397,26 @@ jobs:
       # SHOW + UPLOAD INSTALLER
       # ------------------------------------------------------------
 
-      - name: Find generated installer
+      - name: Rename Sigma Grid Cloud installer
         shell: pwsh
         run: |
-          Write-Host "Generated installer files:"
+          $tmp = "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\tmp"
 
-          Get-ChildItem `
-              "${{ github.workspace }}\${{ env.CRAFT_TARGET }}\tmp" `
-              -File `
-              -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Extension -in ".exe", ".msi"
-            } |
-            ForEach-Object {
-                Write-Host "$($_.FullName) [$($_.Length) bytes]"
-            }
+          $installer = Get-ChildItem $tmp -File -Filter "*.exe" |
+              Where-Object { $_.Name -ne "SigmaGridCloud-Setup-0.1.1.exe" } |
+              Select-Object -First 1
+
+          if (!$installer) {
+              throw "Generated Windows installer not found."
+          }
+
+          $newName = "SigmaGridCloud-Setup-0.1.1.exe"
+          $newPath = Join-Path $tmp $newName
+
+          Move-Item $installer.FullName $newPath -Force
+
+          Write-Host "Installer renamed:"
+          Write-Host "$newPath [$((Get-Item $newPath).Length) bytes]"
 
       - name: Upload Sigma Grid Cloud installer
         uses: actions/upload-artifact@v4
